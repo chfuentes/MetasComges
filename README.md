@@ -55,12 +55,6 @@ streamlit run visualizasimula.py
 
 Esto abrirá una ventana del navegador con el dashboard interactivo.
 
-## Fuente de Datos
-
-Los datos se cargan dinámicamente desde la siguiente hoja de cálculo pública en Google Sheets:
-
-[https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7yKDhmdK-Hz4Qcr_wpQo9u4Vf6arzrcTEhqujrJUD59Lu9haFKyLQQDdUfgBijB7clgYHpp5x28SZ/pub?gid=304183817&single=true&output=csv](https://docs.google.com/spreadsheets/d/e/2PACX-1vQ7yKDhmdK-Hz4Qcr_wpQo9u4Vf6arzrcTEhqujrJUD59Lu9haFKyLQQDdUfgBijB7clgYHpp5x28SZ/pub?gid=304183817&single=true&output=csv)
-
 ## Dependencias
 
 El proyecto utiliza las siguientes librerías, listadas también en `requirements.txt`:
@@ -72,7 +66,7 @@ El proyecto utiliza las siguientes librerías, listadas también en `requirement
 
 ## Versión
 
-v4.1 - Dashboard Interactivo
+v1 - Dashboard Interactivo
 
 ## Información Adicional
 
