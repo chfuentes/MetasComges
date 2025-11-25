@@ -65,9 +65,6 @@ def cargar_datos():
         # Eliminar filas donde Indicador sea NaN
         df = df.dropna(subset=['Indicador'])
 
-        # DEBUG: Mostrar valores únicos de Ponderacion para diagnóstico
-        st.sidebar.write("Valores únicos de Ponderacion:", df['Ponderacion'].astype(str).unique()[:10])
-        
         # Convertir Ponderacion a numérico - manejar diferentes formatos
         df['Ponderacion'] = df['Ponderacion'].astype(str)
         df['Ponderacion'] = df['Ponderacion'].str.replace(',', '.')  # Reemplazar comas por puntos
@@ -78,63 +75,57 @@ def cargar_datos():
             lambda x: f"{(x * 100):.1f}%" if pd.notna(x) else "N/A"
         )
 
-        # DEBUG: Mostrar valores únicos de Meta_Anual para diagnóstico
-        st.sidebar.write("Valores únicos de Meta_Anual:", df['Meta_Anual'].astype(str).unique()[:10])
-        
         # Convertir Meta_Anual a string
         df['Meta_Anual_Original'] = df['Meta_Anual'].astype(str)
 
-        # Función mejorada para procesar metas anuales
+        # Función mejorada para procesar metas anuales - maneja decimales con coma
         def procesar_meta_anual(meta_str):
             meta_str = str(meta_str).strip()
-            
-            # DEBUG
-            if "85" in meta_str:
-                st.sidebar.write(f"Procesando meta con 85: {meta_str}")
             
             # Corregir encoding específico para símbolos
             meta_str = meta_str.replace('â‰¥', '≥')
             
-            # Si es un número directo (como 85), tratarlo como porcentaje
-            try:
-                # Intentar convertir directamente a número
-                valor_directo = float(meta_str)
-                return pd.Series([f"{valor_directo:.1f}%", valor_directo, True])
-            except:
-                pass
+            # Reemplazar comas por puntos para conversión numérica
+            meta_str_para_conversion = meta_str.replace(',', '.')
             
-            # Buscar patrones numéricos (con o sin símbolo ≥)
-            patron_numerico = r'≥?\s*(\d+\.?\d*)%?'
-            match = re.search(patron_numerico, meta_str)
+            # Determinar si tiene símbolo ≥
+            tiene_mayor_igual = '≥' in meta_str
+            meta_limpia = meta_str_para_conversion.replace('≥', '').strip()
             
-            if match:
-                # Extraer el valor numérico
-                valor_numerico = float(match.group(1))
-                
-                # Determinar si tiene símbolo ≥
-                tiene_mayor_igual = '≥' in meta_str
-                
-                # DEBUG
-                if valor_numerico == 85:
-                    st.sidebar.write(f"Encontrado 85: {meta_str}, match: {match.group()}")
-                
-                # Si el valor es mayor a 1, asumimos que ya es porcentaje (85 = 85%)
-                # Si el valor es menor o igual a 1, convertimos a porcentaje (0.85 = 85%)
-                if 0 < valor_numerico <= 1:
-                    valor_porcentaje = valor_numerico * 100
-                else:
+            # Verificar si ya es un porcentaje (contiene %)
+            if '%' in meta_limpia:
+                # Ya es porcentaje, extraer el número
+                patron_porcentaje = r'(\d+\.?\d*)%'
+                match = re.search(patron_porcentaje, meta_limpia)
+                if match:
+                    valor_numerico = float(match.group(1))
+                    # Ya está en porcentaje, no multiplicar
                     valor_porcentaje = valor_numerico
-                    
-                # Formatear para display
-                if tiene_mayor_igual:
-                    display = f"≥{valor_porcentaje:.1f}%"
                 else:
-                    display = f"{valor_porcentaje:.1f}%"
-                    
-                return pd.Series([display, valor_porcentaje, True])  # True = es comparable
+                    # No se pudo extraer, mantener como texto
+                    return pd.Series([meta_str, None, False])
             else:
-                # No se encontró patrón numérico, es una glosa
-                return pd.Series([meta_str, None, False])  # False = no es comparable
+                # Es un decimal, convertir a porcentaje
+                try:
+                    # Intentar convertir directamente a número
+                    valor_numerico = float(meta_limpia)
+                    # Si es decimal (menor que 1 y mayor que 0), convertir a porcentaje
+                    if 0 < valor_numerico <= 1:
+                        valor_porcentaje = valor_numerico * 100
+                    else:
+                        # Ya está en porcentaje o es un número entero
+                        valor_porcentaje = valor_numerico
+                except:
+                    # No es numérico, es una glosa
+                    return pd.Series([meta_str, None, False])
+            
+            # Formatear para display
+            if tiene_mayor_igual:
+                display = f"≥{valor_porcentaje:.1f}%"
+            else:
+                display = f"{valor_porcentaje:.1f}%"
+                
+            return pd.Series([display, valor_porcentaje, True])  # True = es comparable
 
         # Aplicar la función a la columna Meta_Anual
         df[['Meta_Anual_Display', 'Meta_Anual_Valor', 'Meta_Anual_Comparable']] = df['Meta_Anual'].apply(procesar_meta_anual)
@@ -160,6 +151,7 @@ def cargar_datos():
         st.error(f"Error al cargar datos: {e}")
         return pd.DataFrame()
 
+# El resto del código permanece igual...
 # Cargar datos
 df_original = cargar_datos()
 
@@ -289,7 +281,6 @@ for idx in range(len(df_filtrado)):
 
 st.markdown("---")
 
-# Resto del código permanece igual...
 # ============== SIMULACIÓN - TABLA EDITABLE ==============
 st.header("🔬 Simulación de Escenarios")
 
@@ -462,7 +453,146 @@ with tab1:
     with col_leyenda3:
         st.caption("🔄 **Gris:** No aplica comparación")
 
-# Resto del código (tab2 y tab3) permanece igual...
+with tab2:
+    st.subheader("Comparación de Indicadores")
+
+    # Usar datos actuales del session_state
+    df_comparacion = st.session_state[session_key].copy()
+
+    # Convertir a numérico
+    for mes in meses:
+        df_comparacion[mes] = pd.to_numeric(df_comparacion[mes], errors='coerce')
+
+    df_comparacion['Promedio'] = df_comparacion[meses].mean(axis=1, skipna=True)
+
+    # Gráfico de barras
+    fig_barras = px.bar(
+        df_comparacion,
+        x='Indicador',
+        y='Promedio',
+        title='Promedio de Cumplimiento por Indicador',
+        labels={'Promedio': 'Cumplimiento Promedio (%)', 'Indicador': 'Indicador'},
+        color='Promedio',
+        color_continuous_scale='RdYlGn',
+        height=450
+    )
+
+    fig_barras.update_layout(
+        showlegend=False,
+        yaxis=dict(
+            ticksuffix="%",
+            range=[0, 100]
+        )
+    )
+    st.plotly_chart(fig_barras, use_container_width=True)
+
+    # Gráfico de líneas múltiples
+    st.markdown("### Evolución Comparativa")
+
+    # Crear DataFrame para gráfico múltiple
+    datos_grafico = []
+    for idx in range(len(df_comparacion)):
+        ind_valor = df_comparacion.iloc[idx]['Indicador']
+        try:
+            ind_num = int(ind_valor)
+            ind_label = f"Ind. {ind_num}"
+        except:
+            ind_label = f"Ind. {idx+1}"
+
+        for mes in meses:
+            valor = df_comparacion.iloc[idx][mes]
+            if pd.notna(valor):
+                datos_grafico.append({
+                    'Mes': mes,
+                    'Cumplimiento': valor,
+                    'Indicador': ind_label
+                })
+
+    if datos_grafico:
+        df_grafico = pd.DataFrame(datos_grafico)
+
+        fig_lineas = px.line(
+            df_grafico,
+            x='Mes',
+            y='Cumplimiento',
+            color='Indicador',
+            title='Evolución Mensual de Todos los Indicadores',
+            markers=True,
+            height=450
+        )
+
+        fig_lineas.update_layout(
+            yaxis=dict(
+                ticksuffix="%",
+                range=[0, 100]
+            )
+        )
+
+        st.plotly_chart(fig_lineas, use_container_width=True)
+
+with tab3:
+    st.subheader("Estadísticas Detalladas")
+
+    # Usar datos actuales del session_state
+    df_stats_base = st.session_state[session_key].copy()
+    df_stats = df_stats_base[['Indicador', 'Descripcion', 'Meta_Anual_Display', 'Ponderacion_Display']].copy()
+
+    # Convertir meses a numérico para estadísticas
+    df_temp = df_stats_base[meses].copy()
+    for mes in meses:
+        df_temp[mes] = pd.to_numeric(df_temp[mes], errors='coerce')
+
+    df_stats['Meta_Proyectada'] = df_temp.mean(axis=1, skipna=True).round(1)
+    df_stats['Promedio'] = df_stats['Meta_Proyectada']
+    df_stats['Mínimo'] = df_temp.min(axis=1, skipna=True).round(1)
+    df_stats['Máximo'] = df_temp.max(axis=1, skipna=True).round(1)
+    df_stats['Desv. Est.'] = df_temp.std(axis=1, skipna=True).round(1)
+    df_stats['Meses Registrados'] = df_temp.notna().sum(axis=1)
+
+    # Formatear columnas numéricas como porcentajes
+    df_stats['Meta_Proyectada'] = df_stats['Meta_Proyectada'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    df_stats['Promedio'] = df_stats['Promedio'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    df_stats['Mínimo'] = df_stats['Mínimo'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    df_stats['Máximo'] = df_stats['Máximo'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+    df_stats['Desv. Est.'] = df_stats['Desv. Est.'].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else "N/A")
+
+    st.dataframe(df_stats, use_container_width=True, hide_index=True)
+
+    # Resumen general
+    st.markdown("---")
+    st.markdown("### 📈 Resumen General")
+
+    col_stat1, col_stat2, col_stat3 = st.columns(3)
+
+    with col_stat1:
+        # Calcular promedio global de los valores numéricos
+        promedios_numericos = df_temp.mean(axis=1, skipna=True)
+        promedio_todos = promedios_numericos.mean()
+        st.metric("Promedio Global", f"{promedio_todos:.1f}%" if pd.notna(promedio_todos) else "N/A")
+
+    with col_stat2:
+        if len(promedios_numericos) > 0 and not promedios_numericos.isna().all():
+            mejor_idx = promedios_numericos.idxmax()
+            mejor_indicador = df_stats.loc[mejor_idx, 'Indicador']
+            mejor_valor = promedios_numericos.loc[mejor_idx]
+            try:
+                st.metric("Mejor Indicador", f"Ind. {int(mejor_indicador)}: {mejor_valor:.1f}%")
+            except:
+                st.metric("Mejor Indicador", f"{mejor_valor:.1f}%")
+        else:
+            st.metric("Mejor Indicador", "N/A")
+
+    with col_stat3:
+        if len(promedios_numericos) > 0 and not promedios_numericos.isna().all():
+            menor_idx = promedios_numericos.idxmin()
+            menor_indicador = df_stats.loc[menor_idx, 'Indicador']
+            menor_valor = promedios_numericos.loc[menor_idx]
+            try:
+                st.metric("Menor Indicador", f"Ind. {int(menor_indicador)}: {menor_valor:.1f}%")
+            except:
+                st.metric("Menor Indicador", f"{menor_valor:.1f}%")
+        else:
+            st.metric("Menor Indicador", "N/A")
 
 # Sidebar con información
 st.sidebar.markdown("### ℹ️ Acerca de")
@@ -482,4 +612,4 @@ st.sidebar.info(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption("v3.9 - Dashboard Interactivo")
+st.sidebar.caption("v4.1 - Dashboard Interactivo")
